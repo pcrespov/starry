@@ -21,9 +21,11 @@ def riemannFluence(exp, b, f):
     return np.mean(bb, axis=1), fluence
 
 
-exp = 0.75
-r = 0.05
-u = np.array([0.4, 0.26])
+exp = 0.25
+r = 0.001
+u = np.array([0., 1.])
+
+
 b = np.linspace(-1.5, 1.5, 300)
 data = fluence.compute(b, r, u, exp)
 f = data[:, 0]
@@ -32,6 +34,15 @@ f2 = data[:, 2]
 f4 = data[:, 3]
 f6 = data[:, 4]
 f8 = data[:, 5]
+
+fig, ax = pl.subplots(5)
+ax[0].plot(np.abs(f))
+ax[1].plot(np.abs(f2))
+ax[2].plot(np.abs(f4))
+ax[3].plot(np.abs(f6))
+ax[4].plot(np.abs(f8))
+for axis in ax:
+    axis.set_yscale("log")
 
 tf2 = taylorFluence(exp, f, f2)
 tf4 = taylorFluence(exp, f, f2, f4)
