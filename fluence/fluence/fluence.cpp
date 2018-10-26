@@ -80,13 +80,13 @@ T dfluxdb(int n, const T& b, const T& r, TransitInfo<T>& I) {
 template <class T>
 T fluenceQuad(const T& expo, const T& b, const T& r, TransitInfo<T>& I) {
     auto f = [&r, &I](const T& b_) { return flux(abs(b_), r, I); };
-    return gauss<T, 20>::integrate(f, b - 0.5 * expo, b + 0.5 * expo) / expo;
+    return gauss<T, 128>::integrate(f, b - 0.5 * expo, b + 0.5 * expo) / expo;
 }
 
 
 template <class T>
 T fint(const int order, const T& t1, const T& t2, const T& b, const T& r, TransitInfo<T>& I) {
-    T tavg = 0.5 * (t1 + t2);
+    T tavg = 0.5 * abs(t1 + t2);
     T tdif = (t2 - t1);
     T f = flux(tavg, r, I);
     if (order > 0) {
@@ -106,7 +106,7 @@ T fint(const int order, const T& t1, const T& t2, const T& b, const T& r, Transi
 
 
 template <class T>
-T fluenceTaylor(const int order, const T& expo, const T& b, const T& r, TransitInfo<T>& I) {
+T fluenceTaylor(const int order, const int subdiv, const T& expo, const T& b, const T& r, TransitInfo<T>& I) {
 
     // Boundaries
     T e = 0.5 * expo;
@@ -117,76 +117,98 @@ T fluenceTaylor(const int order, const T& expo, const T& b, const T& r, TransitI
     T C = Q - e;
     T D = Q + e;
 
-    // Limits of integration and result
-    T t1, t2;
-    T f;
+    /*
+    // Limits of integration
+    std::vector<T> t;
 
-    //std::vector<T> ti;
+    // First boundary
+    t.push_back(b - e);
 
     // Cases
-    if ((b <= A) || ((b >= B) && (b <= C)) || (b >= D)) {
-        // Regions 1, 3, and 5
-        t1 = b - e;
-        t2 = b + e;
-        f = fint(order, t1, t2, b, r, I);
-    } else if ((b >= A) && (b <= B)) {
-        // Region 2
-
-        if (b > P) {
-            t1 = b - e;
-            t2 = P;
-            f = fint(order, t1, t2, b, r, I);
-
-            t1 = P;
-            t2 = 2 * b - P;
-            f += fint(order, t1, t2, b, r, I);
-
-            t1 = 2 * b - P;
-            t2 = B;
-            f += fint(order, t1, t2, b, r, I);
-
-            t1 = B;
-            t2 = b + e;
-            f += fint(order, t1, t2, b, r, I);
-        } else {
-
-            t1 = b - e;
-            t2 = A;
-            f = fint(order, t1, t2, b, r, I);
-
-            t1 = A;
-            t2 = 2 * b - P;
-            f += fint(order, t1, t2, b, r, I);
-
-            t1 = 2 * b - P;
-            t2 = P;
-            f += fint(order, t1, t2, b, r, I);
-
-            t1 = P;
-            t2 = b + e;
-            f += fint(order, t1, t2, b, r, I);
+    if (B < C) {
+        // expo < 2 * r
+        if ((b >= A) && (b <= B)) {
+            if (b < P) {
+                t.push_back(A);
+                t.push_back(2 * b - P);
+                t.push_back(P);
+            } else {
+                t.push_back(P);
+                t.push_back(2 * b - P);
+                t.push_back(B);
+            }
+        } else if ((b >= C) && (b <= D)) {
+            if (b < Q) {
+                t.push_back(C);
+                t.push_back(2 * b - Q);
+                t.push_back(Q);
+            } else {
+                t.push_back(Q);
+                t.push_back(2 * b - Q);
+                t.push_back(D);
+            }
         }
-
-    } else if ((b >= C) && (b <= D)) {
-        // Region 4
-
-        f = NAN; // DEBUG TODO
-
+    } else if (B < Q) {
+        // 2 * r < expo < 4 * r
+        // TODO
     } else {
-        // Never runs!
-        throw std::invalid_argument( "Invalid value." );
+        // expo > 4 * r
+        // TODO
     }
+
+    // Last boundary
+    t.push_back(b + e);
+    */
+
+    // DEBUG
+    std::vector<T> t {b - e, A, B, C, D, P, Q, 2 * b - P, 2 * b - Q, b + e};
+    std::sort(t.begin(), t.end());
+
+    // Compute the integrals
+    T f = 0;
+    T dt;
+    for (size_t i = 0; i < t.size() - 1; ++i) {
+
+        if ((t[i] < b - e) || (t[i + 1] > b + e))
+            continue;
+
+        dt = (t[i + 1] - t[i]) / subdiv;
+        for (int j = 0; j < subdiv; ++j) {
+            f += fint(order, t[i] + j * dt, t[i] + (j + 1) * dt, b, r, I);
+        }
+    }
+
     return f / expo;
 }
 
-Matrix<double> compute(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo) {
+Vector<double> computeFlux(const Vector<double>& b, const double& r, const Vector<double>& u) {
 
     using T = Multi;
     int npts = b.rows();
     int lmax = u.rows();
-    Matrix<T> f(npts, 7);
+    Vector<T> f(npts);
     TransitInfo<T> I(lmax, u);
     TransitInfo<double> dblI(lmax, u);
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = flux(bi, r_, I);
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int order=99, const int subdiv=1) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
 
     // Run!
     T bi;
@@ -194,12 +216,10 @@ Matrix<double> compute(const Vector<double>& b, const double& r, const Vector<do
     T expo_ = T(expo);
     for (int i = 0; i < npts; ++i) {
         bi = T(abs(b(i)));
-        f(i, 0) = flux(bi, r_, I);
-        f(i, 1) = fluenceQuad(expo_, bi, r_, I);
-        f(i, 2) = fluenceTaylor(2, expo_, bi, r_, I);
-        f(i, 3) = fluenceTaylor(4, expo_, bi, r_, I);
-        f(i, 4) = fluenceTaylor(6, expo_, bi, r_, I);
-        f(i, 5) = fluenceTaylor(8, expo_, bi, r_, I);
+        if (order < 8)
+            f(i) = fluenceTaylor(order, subdiv, expo_, bi, r_, I);
+        else
+            f(i) = fluenceQuad(expo_, bi, r_, I);
     }
 
     return f.template cast<double>();
@@ -208,7 +228,9 @@ Matrix<double> compute(const Vector<double>& b, const double& r, const Vector<do
 
 PYBIND11_MODULE(fluence, m) {
 
-    m.def("compute", &compute);
+    m.def("flux", &computeFlux);
+
+    m.def("fluence", &computeFluence);
 
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
