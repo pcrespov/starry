@@ -59,7 +59,7 @@ def get_ext(module='fluence'):
             # Path to eigen headers
             "../lib/eigen_3.3.3",
             # Path to boost headers
-            "../lib/boost_1_68_0",
+            "boost", #"../lib/boost_1_66_0",
             # Path to LBFGSpp headers
             "../lib/LBFGSpp/include"
         ],
