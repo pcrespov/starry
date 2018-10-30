@@ -106,76 +106,36 @@ T fint(const int order, const T& t1, const T& t2, const T& b, const T& r, Transi
 
 
 template <class T>
-T fluenceTaylor(const int order, const int subdiv, const T& expo, const T& b, const T& r, TransitInfo<T>& I) {
+T fluenceTaylor(const int order, const T& expo, const T& b, const T& r, TransitInfo<T>& I) {
 
-    // Boundaries
+    // All possible limits of integration
     T e = 0.5 * expo;
-    T P = 1 - r;
-    T Q = 1 + r;
-    T A = P - e;
-    T B = P + e;
-    T C = Q - e;
-    T D = Q + e;
+    T P = 1 - r,
+      Q = 1 + r,
+      A = P - e,
+      B = P + e,
+      C = Q - e,
+      D = Q + e,
+      E = 2 * b - P,
+      F = 2 * b - Q,
+      Z = 0.0;
+    std::vector<T> all_limits {A, B, C, D, E, F, P, Q, Z};
 
-    /*
-    // Limits of integration
-    std::vector<T> t;
-
-    // First boundary
-    t.push_back(b - e);
-
-    // Cases
-    if (B < C) {
-        // expo < 2 * r
-        if ((b >= A) && (b <= B)) {
-            if (b < P) {
-                t.push_back(A);
-                t.push_back(2 * b - P);
-                t.push_back(P);
-            } else {
-                t.push_back(P);
-                t.push_back(2 * b - P);
-                t.push_back(B);
-            }
-        } else if ((b >= C) && (b <= D)) {
-            if (b < Q) {
-                t.push_back(C);
-                t.push_back(2 * b - Q);
-                t.push_back(Q);
-            } else {
-                t.push_back(Q);
-                t.push_back(2 * b - Q);
-                t.push_back(D);
-            }
-        }
-    } else if (B < Q) {
-        // 2 * r < expo < 4 * r
-        // TODO
-    } else {
-        // expo > 4 * r
-        // TODO
+    // Identify and sort the relevant ones
+    std::vector<T> limits;
+    limits.push_back(b - e);
+    for (auto lim : all_limits) {
+        if ((lim > b - e) && (lim < b + e))
+            limits.push_back(lim);
     }
-
-    // Last boundary
-    t.push_back(b + e);
-    */
-
-    // DEBUG
-    std::vector<T> t {b - e, A, B, C, D, P, Q, 2 * b - P, 2 * b - Q, b + e};
-    std::sort(t.begin(), t.end());
+    limits.push_back(b + e);
+    std::sort(limits.begin() + 1, limits.end() - 1);
 
     // Compute the integrals
     T f = 0;
     T dt;
-    for (size_t i = 0; i < t.size() - 1; ++i) {
-
-        if ((t[i] < b - e) || (t[i + 1] > b + e))
-            continue;
-
-        dt = (t[i + 1] - t[i]) / subdiv;
-        for (int j = 0; j < subdiv; ++j) {
-            f += fint(order, t[i] + j * dt, t[i] + (j + 1) * dt, b, r, I);
-        }
+    for (size_t i = 0; i < limits.size() - 1; ++i) {
+        f += fint(order, limits[i], limits[i + 1], b, r, I);
     }
 
     return f / expo;
@@ -202,7 +162,7 @@ Vector<double> computeFlux(const Vector<double>& b, const double& r, const Vecto
 
 }
 
-Vector<double> computeFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int order=99, const int subdiv=1) {
+Vector<double> computeTaylorFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int order) {
 
     using T = Multi;
     int npts = b.rows();
@@ -216,10 +176,143 @@ Vector<double> computeFluence(const Vector<double>& b, const double& r, const Ve
     T expo_ = T(expo);
     for (int i = 0; i < npts; ++i) {
         bi = T(abs(b(i)));
-        if (order < 8)
-            f(i) = fluenceTaylor(order, subdiv, expo_, bi, r_, I);
-        else
-            f(i) = fluenceQuad(expo_, bi, r_, I);
+        f(i) = fluenceTaylor(order, expo_, bi, r_, I);
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeExactFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    T expo_ = T(expo);
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = fluenceQuad(expo_, bi, r_, I);
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeLeftRiemannFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int ndiv) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    T expo_ = T(expo);
+    T db = expo_ / ndiv;
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = 0.0;
+        T b0 = bi - 0.5 * expo_;
+        for (int j = 0; j < ndiv; ++j) {
+            f(i) += flux(abs(b0 + db * j), r_, I);
+        }
+        f(i) /= ndiv;
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeRiemannFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int ndiv) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    T expo_ = T(expo);
+    T db = expo_ / (ndiv + 1);
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = 0.0;
+        T b0 = bi - 0.5 * expo_ + db;
+        for (int j = 0; j < ndiv; ++j) {
+            f(i) += flux(abs(b0 + db * j), r_, I);
+        }
+        f(i) /= ndiv;
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeTrapezoidFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, const int ndiv) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    T expo_ = T(expo);
+    T db = expo_ / ndiv;
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = 0.0;
+        T b0 = bi - 0.5 * expo_;
+        for (int j = 0; j < ndiv; ++j) {
+            f(i) += 0.5 * (flux(abs(b0 + db * j), r_, I) + flux(abs(b0 + db * (j + 1)), r_, I));
+        }
+        f(i) /= ndiv;
+    }
+
+    return f.template cast<double>();
+
+}
+
+Vector<double> computeSimpsonFluence(const Vector<double>& b, const double& r, const Vector<double>& u, const double& expo, int ndiv) {
+
+    using T = Multi;
+    int npts = b.rows();
+    int lmax = u.rows();
+    Vector<T> f(npts);
+    TransitInfo<T> I(lmax, u);
+
+    if (ndiv % 2 != 0) ndiv += 1;
+
+    // Run!
+    T bi;
+    T r_ = T(r);
+    T expo_ = T(expo);
+    T db = expo_ / ndiv;
+    for (int i = 0; i < npts; ++i) {
+        bi = T(abs(b(i)));
+        f(i) = 0.0;
+        T b0 = bi - 0.5 * expo_;
+        for (int j = 0; j <= ndiv; ++j) {
+            T f0 = flux(abs(b0 + db * j), r_, I);
+            if (j == 0 || j == ndiv)
+                f(i) += f0;
+            else
+                f(i) += (2 + 2 * (j % 2)) * f0;
+            // f(i) += 0.5 * (flux(abs(b0 + db * j), r_, I) + flux(abs(b0 + db * (j + 1)), r_, I));
+        }
+        f(i) /= 3 * ndiv;
     }
 
     return f.template cast<double>();
@@ -230,7 +323,17 @@ PYBIND11_MODULE(fluence, m) {
 
     m.def("flux", &computeFlux);
 
-    m.def("fluence", &computeFluence);
+    m.def("taylor_fluence", &computeTaylorFluence);
+
+    m.def("exact_fluence", &computeExactFluence);
+
+    m.def("left_riemann_fluence", &computeLeftRiemannFluence);
+
+    m.def("riemann_fluence", &computeRiemannFluence);
+
+    m.def("trapezoid_fluence", &computeTrapezoidFluence);
+
+    m.def("simpson_fluence", &computeSimpsonFluence);
 
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
