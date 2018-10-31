@@ -71,8 +71,13 @@ namespace rotation {
 
         // The actual Wigner matrices
         Matrix<T>* DZeta;                                                       /**< The complex Wigner matrix in the `zeta` frame */
+
+    public:
+        
         Matrix<T>* RZeta;                                                       /**< The real Wigner matrix in the `zeta` frame */
         Matrix<T>* RZetaInv;                                                    /**< The inverse of the real Wigner matrix in the `zeta` frame */
+
+    private:
 
         // `zhat` rotation params
         Vector<T> cosnt;                                                        /**< Vector of cos(n theta) values */
@@ -105,6 +110,9 @@ namespace rotation {
                            MapType& yout);
         inline void compute(const T& costheta, const T& sintheta);
         inline void rotatez(const T& costheta, const T& sintheta,
+                            const MapType& yin, MapType& yout);
+        inline void rotatez(const T& theta,
+                            const T& expo, const T& per,
                             const MapType& yin, MapType& yout);
 
         // Constructor: allocate the matrices
@@ -343,6 +351,139 @@ namespace rotation {
                 yrev.transpose().array().rowwise() * sinmt.array().transpose()).transpose();
 
     }
+
+    /**
+    Perform a fast rotation about the z axis, skipping the Wigner matrix computation.
+    Integrate this over an exposure time to compute an effective "rotation" for the
+    fluence computation.
+
+    */
+    template <class MapType>
+    inline void Wigner<MapType>::rotatez(const typename MapType::Scalar& theta,
+                                         const typename MapType::Scalar& expo,
+                                         const typename MapType::Scalar& per,
+                                         const MapType& yin, MapType& yout) {
+
+        using T = typename MapType::Scalar;
+        T dt_ = pi<T>() * expo / per;
+        std::vector<MapType> y_(2);
+        std::vector<T> dt {-dt_, dt_};
+
+        // Compute the antiderivative at the bounds
+        for (int i = 0; i < 2; ++i) {
+            cosnt(1) = cos(theta + dt[i]);
+            sinnt(1) = sin(theta + dt[i]);
+            for (int n = 2; n < lmax + 1; n++) {
+                cosnt(n) = 2.0 * cosnt(n - 1) * cosnt(1) - cosnt(n - 2);
+                sinnt(n) = 2.0 * sinnt(n - 1) * cosnt(1) - sinnt(n - 2);
+            }
+            int n = 0;
+            for (int l = 0; l < lmax + 1; l++) {
+                for (int m = -l; m < 0; m++) {
+                    cosmt(n) = sinnt(-m) / (-m);
+                    sinmt(n) = cosnt(-m) / (-m);
+                    yrev.row(n) = yin.row(l * l + l - m);
+                    n++;
+                }
+                cosmt(n) = theta + dt[i];
+                sinmt(n) = 0;
+                yrev.row(n) = yin.row(l * l + l);
+                n++;
+                for (int m = 1; m < l + 1; m++) {
+                    cosmt(n) = sinnt(m) / m;
+                    sinmt(n) = -cosnt(m) / m;
+                    yrev.row(n) = yin.row(l * l + l - m);
+                    n++;
+                }
+            }
+
+            // TODO. This may be faster if MapType is Vector:
+            // yout = cosmt.cwiseProduct(yin) - sinmt.cwiseProduct(yrev);
+            y_[i] = (yin.transpose().array().rowwise() * cosmt.array().transpose() -
+                     yrev.transpose().array().rowwise() * sinmt.array().transpose()).transpose();
+
+        }
+
+        // The definite integral
+        yout = (y_[1] - y_[0]) / (2 * dt_);
+
+    }
+
+    /*
+    template <class MapType>
+    inline void Wigner<MapType>::rotatez(const typename MapType::Scalar& theta,
+                                         MapType& yin, MapType& yout, 
+                                         const typename MapType::Scalar& expo,
+                                         const typename MapType::Scalar& per) {
+        
+        using T = typename MapType::Scalar;
+        T sint, cost;
+        std::vector<MapType> y_(2);
+        std::vector<double> dt {-pi<T>() * expo / per, pi<T>() * expo / per};
+
+        // Compute the antiderivative at the bounds
+        for (int i = 0; i < 2; ++i) {
+
+            // DEBUG
+            for (int n = 0; n < 9; ++n) yin(n) = n;
+            dt[i] = 0.43 - theta;
+
+            // Recursion relations for the integrals
+            // of cos(x)^n and sin(x)^n
+            cosnt(0) = theta + dt[i];
+            sinnt(0) = theta + dt[i];
+            cosnt(1) = sin(theta + dt[i]);
+            sinnt(1) = -cos(theta + dt[i]);
+            sint = cosnt(1);
+            cost = -sinnt(1);
+            for (int n = 2; n < lmax + 1; n++) {
+                cosnt(n) = (cost * cosnt(1) + (n - 1) * cosnt(n - 2)) / n;
+                sinnt(n) = (sint * sinnt(1) + (n - 1) * sinnt(n - 2)) / n;
+                sint *= cosnt(1);
+                cost *= -sinnt(1);
+            }
+
+            // Compute the diagonal and anti-diagonal of the rotation matrix
+            int n = 0;
+            for (int l = 0; l < lmax + 1; l++) {
+                for (int m = -l; m < 0; m++) {
+                    cosmt(n) = cosnt(-m);
+                    sinmt(n) = -sinnt(-m);
+                    yrev.row(n) = yin.row(l * l + l - m);
+                    n++;
+                }
+                cosmt(n) = cosnt(0);
+                sinmt(n) = 0;
+                yrev.row(n) = yin.row(l * l + l);
+                n++;
+                for (int m = 1; m < l + 1; m++) {
+                    cosmt(n) = cosnt(m);
+                    sinmt(n) = sinnt(m);
+                    yrev.row(n) = yin.row(l * l + l - m);
+                    n++;
+                }
+            }
+
+            //y_[i] = cosmt.cwiseProduct(yin) - sinmt.cwiseProduct(yrev);
+            y_[i] = (yin.transpose().array().rowwise() * cosmt.array().transpose() -
+                     yrev.transpose().array().rowwise() * sinmt.array().transpose()).transpose();
+
+
+            // DEBUG
+            std::cout << y_[i] << std::endl;
+            exit(0);
+
+        }
+
+        // The definite integral
+        yout = (y_[1] - y_[0]) * per / (2 * pi<T>() * expo);
+
+        // Reset these for later
+        cosnt(0) = 1;
+        sinnt(0) = 0;
+
+    }
+    */
 
     /**
     Compute the axis-angle rotation matrix for real spherical harmonics up to order lmax.

@@ -10,10 +10,13 @@
 #include "utils.h"
 #include "limbdark.h"
 #include "tables.h"
+#include "rotation.h"
+#include "basis.h"
 
 using namespace boost::math::quadrature;
 using namespace utils;
 using std::abs;
+using std::max;
 namespace py = pybind11;
 
 template <class T>
@@ -319,8 +322,61 @@ Vector<double> computeSimpsonFluence(const Vector<double>& b, const double& r, c
 
 }
 
+Vector<double> computePhaseCurveFluence(const Vector<double>& time, Vector<double>& y,
+    UnitVector<double>& axis, const double& per, const double& t0, const double& theta0,
+    const double& expo) {
+
+    // Initialize stuff
+    int N = y.size();
+    int lmax = int(sqrt(N) - 1);
+    basis::Basis<double> B(lmax);
+    rotation::Wigner<Vector<double>> W(lmax, 1, y, axis);
+    W.update();
+
+    // Frame transforms
+    VectorT<double> P(N);
+    Vector<double> Q(N), QRev(N);
+    for (int l = 0; l < lmax + 1; l++) {
+        P.segment(l * l, 2 * l + 1) = B.rTA1.segment(l * l, 2 * l + 1) * W.RZetaInv[l];
+        Q.segment(l * l, 2 * l + 1) = W.RZeta[l] * y.segment(l * l, 2 * l + 1);
+    }
+    Vector<double> RQ;
+
+    // Theta vector
+    Vector<double> theta = Vector<double>::Ones(time.size()) * theta0 + (2 * pi<double>() / per) * (time - Vector<double>::Ones(time.size()) * t0);
+
+    // Compute the phase curve
+    Vector<double> f(time.size());
+    f.setZero();
+    for (int i = 0; i < time.size(); ++i) {
+        
+        W.rotatez(theta(i), expo, per, Q, RQ);
+        f(i) = P * RQ;
+
+
+        // DEBUG: Numerical using centered riemann
+        /*
+        int n = 50;
+        double expo_theta = 2 * pi<double>() / per * expo;
+        double dt = expo_theta / (n + 1);
+        double t0 = theta(i) - 0.5 * expo_theta + dt;
+        f(i) = 0;
+        for (int j = 0; j < n; ++j) {
+            W.rotatez(cos(t0 + j * dt), sin(t0 + j * dt), Q, RQ);
+            f(i) += P * RQ;
+        }
+        f(i) /= n;
+        */
+
+    }
+
+    return f;
+}
+
+
 PYBIND11_MODULE(fluence, m) {
 
+    /*
     m.def("flux", &computeFlux);
 
     m.def("taylor_fluence", &computeTaylorFluence);
@@ -334,6 +390,9 @@ PYBIND11_MODULE(fluence, m) {
     m.def("trapezoid_fluence", &computeTrapezoidFluence);
 
     m.def("simpson_fluence", &computeSimpsonFluence);
+    */
+
+    m.def("phase_curve_fluence", &computePhaseCurveFluence);
 
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
