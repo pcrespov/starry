@@ -15,6 +15,7 @@ from the Wigner-D matrices for complex spherical harmonics.
 
 #include <cmath>
 #include <Eigen/Core>
+#include "basis.h"
 #include "utils.h"
 #include "tables.h"
 
@@ -23,6 +24,7 @@ namespace rotation {
     using namespace utils;
     using std::abs;
     using std::max;
+    using basis::Basis;
 
     /**
     Axis-angle rotation matrix, used to rotate Cartesian
@@ -63,6 +65,7 @@ namespace rotation {
         // References to the base map and the rotation axis
         MapType& y;                                                             /**< Reference to the spherical harmonic map to be rotated */
         UnitVector<T>& axis;                                                    /**< Reference to the rotation axis */
+        Basis<T> B;                                                             /**< Reference to the change of basis class */
 
         // Cached transforms
         T cache_costheta;                                                       /**< Last value of cos(theta) used */
@@ -71,13 +74,9 @@ namespace rotation {
 
         // The actual Wigner matrices
         Matrix<T>* DZeta;                                                       /**< The complex Wigner matrix in the `zeta` frame */
-
-    public:
-        
         Matrix<T>* RZeta;                                                       /**< The real Wigner matrix in the `zeta` frame */
         Matrix<T>* RZetaInv;                                                    /**< The inverse of the real Wigner matrix in the `zeta` frame */
-
-    private:
+        VectorT<T> rTA1RZetaInv;                                                /**< Rotation operation vector projected into `zeta` frame */
 
         // `zhat` rotation params
         Vector<T> cosnt;                                                        /**< Vector of cos(n theta) values */
@@ -111,14 +110,15 @@ namespace rotation {
         inline void compute(const T& costheta, const T& sintheta);
         inline void rotatez(const T& costheta, const T& sintheta,
                             const MapType& yin, MapType& yout);
-        inline void rotatez(const T& theta,
-                            const T& expo, const T& per,
-                            const MapType& yin, MapType& yout);
+        inline void rotatez_exp(const T& theta, const T& exposure,
+                                const MapType& yin, MapType& yout);
+        inline Row<MapType> fluence(const typename MapType::Scalar& theta, 
+                                    const typename MapType::Scalar& exposure);
 
         // Constructor: allocate the matrices
-        Wigner(int lmax, int nwav, MapType& y, UnitVector<T>& axis) :
+        Wigner(int lmax, int nwav, MapType& y, UnitVector<T>& axis, Basis<T>& B) :
             lmax(lmax), N((lmax + 1) * (lmax + 1)), NW(nwav),
-            tol(10 * mach_eps<T>()), y(y), axis(axis) {
+            tol(10 * mach_eps<T>()), y(y), axis(axis), B(B) {
 
             // Allocate the Wigner matrices
             DZeta = new Matrix<T>[lmax + 1];
@@ -142,6 +142,7 @@ namespace rotation {
             cosmt.resize(N);
             sinmt.resize(N);
             resize(yrev, N, NW);
+            rTA1RZetaInv.resize(N);
 
             // The base map in the `zeta` frame
             resize(y_zeta, N, NW);
@@ -308,6 +309,11 @@ namespace rotation {
                 RZeta[l] * y.block(l * l, 0, 2 * l + 1, NW);
         }
 
+        // Update the `zeta` rotation pre-factor
+        for (int l = 0; l < lmax + 1; l++) {
+            rTA1RZetaInv.segment(l * l, 2 * l + 1) = B.rTA1.segment(l * l, 2 * l + 1) * RZetaInv[l];
+        }
+
         // Reset the cache
         cache_costheta = NAN;
         cache_sintheta = NAN;
@@ -355,17 +361,16 @@ namespace rotation {
     /**
     Perform a fast rotation about the z axis, skipping the Wigner matrix computation.
     Integrate this over an exposure time to compute an effective "rotation" for the
-    fluence computation.
+    fluence computation. The exposure time is provided in units of the rotation period.
 
     */
     template <class MapType>
-    inline void Wigner<MapType>::rotatez(const typename MapType::Scalar& theta,
-                                         const typename MapType::Scalar& expo,
-                                         const typename MapType::Scalar& per,
-                                         const MapType& yin, MapType& yout) {
+    inline void Wigner<MapType>::rotatez_exp(const typename MapType::Scalar& theta,
+                                             const typename MapType::Scalar& exposure,
+                                             const MapType& yin, MapType& yout) {
 
         using T = typename MapType::Scalar;
-        T dt_ = pi<T>() * expo / per;
+        T dt_ = pi<T>() * exposure;
         std::vector<MapType> y_(2);
         std::vector<T> dt {-dt_, dt_};
 
@@ -409,81 +414,18 @@ namespace rotation {
 
     }
 
-    /*
-    template <class MapType>
-    inline void Wigner<MapType>::rotatez(const typename MapType::Scalar& theta,
-                                         MapType& yin, MapType& yout, 
-                                         const typename MapType::Scalar& expo,
-                                         const typename MapType::Scalar& per) {
-        
-        using T = typename MapType::Scalar;
-        T sint, cost;
-        std::vector<MapType> y_(2);
-        std::vector<double> dt {-pi<T>() * expo / per, pi<T>() * expo / per};
+    /**
+    Perform a fast rotation about the z axis, skipping the Wigner matrix computation.
+    Integrate this over an exposure time to compute an effective "rotation" for the
+    fluence computation. The exposure time is provided in units of the rotation period.
 
-        // Compute the antiderivative at the bounds
-        for (int i = 0; i < 2; ++i) {
-
-            // DEBUG
-            for (int n = 0; n < 9; ++n) yin(n) = n;
-            dt[i] = 0.43 - theta;
-
-            // Recursion relations for the integrals
-            // of cos(x)^n and sin(x)^n
-            cosnt(0) = theta + dt[i];
-            sinnt(0) = theta + dt[i];
-            cosnt(1) = sin(theta + dt[i]);
-            sinnt(1) = -cos(theta + dt[i]);
-            sint = cosnt(1);
-            cost = -sinnt(1);
-            for (int n = 2; n < lmax + 1; n++) {
-                cosnt(n) = (cost * cosnt(1) + (n - 1) * cosnt(n - 2)) / n;
-                sinnt(n) = (sint * sinnt(1) + (n - 1) * sinnt(n - 2)) / n;
-                sint *= cosnt(1);
-                cost *= -sinnt(1);
-            }
-
-            // Compute the diagonal and anti-diagonal of the rotation matrix
-            int n = 0;
-            for (int l = 0; l < lmax + 1; l++) {
-                for (int m = -l; m < 0; m++) {
-                    cosmt(n) = cosnt(-m);
-                    sinmt(n) = -sinnt(-m);
-                    yrev.row(n) = yin.row(l * l + l - m);
-                    n++;
-                }
-                cosmt(n) = cosnt(0);
-                sinmt(n) = 0;
-                yrev.row(n) = yin.row(l * l + l);
-                n++;
-                for (int m = 1; m < l + 1; m++) {
-                    cosmt(n) = cosnt(m);
-                    sinmt(n) = sinnt(m);
-                    yrev.row(n) = yin.row(l * l + l - m);
-                    n++;
-                }
-            }
-
-            //y_[i] = cosmt.cwiseProduct(yin) - sinmt.cwiseProduct(yrev);
-            y_[i] = (yin.transpose().array().rowwise() * cosmt.array().transpose() -
-                     yrev.transpose().array().rowwise() * sinmt.array().transpose()).transpose();
-
-
-            // DEBUG
-            std::cout << y_[i] << std::endl;
-            exit(0);
-
-        }
-
-        // The definite integral
-        yout = (y_[1] - y_[0]) * per / (2 * pi<T>() * expo);
-
-        // Reset these for later
-        cosnt(0) = 1;
-        sinnt(0) = 0;
-
-    }
     */
+    template <class MapType>
+    inline Row<MapType> Wigner<MapType>::fluence(const typename MapType::Scalar& theta,
+                                                 const typename MapType::Scalar& exposure) {
+        rotatez_exp(theta, exposure, y_zeta, y_zeta_rot);
+        return rTA1RZetaInv * y_zeta_rot;
+    }
 
     /**
     Compute the axis-angle rotation matrix for real spherical harmonics up to order lmax.

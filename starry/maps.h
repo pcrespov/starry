@@ -263,6 +263,8 @@ namespace maps {
             inline Row<T> fluxConstantWithGradient(const Scalar<T>& xo_,
                 const Scalar<T>& yo_,
                 const Scalar<T>& ro_);
+            inline Row<T> fluenceWithGradient(const Scalar<T>& theta_,
+                const Scalar<T>& exposure);
         public:
 
             /**
@@ -275,7 +277,7 @@ namespace maps {
                 nwav(nwav),
                 type_valid(checkType(*this)),
                 B(lmax),
-                W(lmax, nwav, (*this).y, (*this).axis),
+                W(lmax, nwav, (*this).y, (*this).axis, (*this).B),
                 G(lmax),
                 G_grad(lmax),
                 L(lmax),
@@ -357,6 +359,11 @@ namespace maps {
                 const Scalar<T>& ro_=0,
                 bool gradient=false,
                 bool numerical=false);
+
+            inline Row<T> fluence(const Scalar<T>& theta_,
+                const Scalar<T>& exposure,
+                bool gradient,
+                bool numerical);
 
             // Is the map physical?
             inline RowBool<T> isPhysical(const Scalar<T>& epsilon=1.e-6,
@@ -1951,6 +1958,54 @@ namespace maps {
 
         }
 
+    }
+
+
+    /* --------------------------- */
+    /*    FLUENCE (EXPERIMENTAL)   */
+    /* --------------------------- */
+
+
+    /**
+    Compute the fluence **outside** of an occultation
+    for the general case of a spherical harmonic map
+    with or without limb darkening. The exposure time
+    is provided in units of the rotation period.
+
+    */
+    template <class T>
+    inline Row<T> Map<T>::fluence(const Scalar<T>& theta_,
+                                  const Scalar<T>& exposure,
+                                  bool gradient,
+                                  bool numerical) {
+
+        if (gradient) {
+            if (numerical)
+                throw errors::NotImplementedError("Numerical gradients of the "
+                                                  "flux have not been implemented.");
+            return fluenceWithGradient(theta_, exposure);
+        }
+
+        // Convert to internal types
+        Scalar<T> theta = theta_ * (pi<Scalar<T>>() / 180.);
+
+        // Frame transforms
+        return W.fluence(theta, exposure);
+
+    }
+
+    /**
+    Compute the fluence **outside** of an occultation
+    for the general case of a spherical harmonic map
+    with or without limb darkening. Also compute
+    the derivatives. The exposure time
+    is provided in units of the rotation period.
+
+    */
+    template <class T>
+    inline Row<T> Map<T>::fluenceWithGradient(const Scalar<T>& theta_, const Scalar<T>& exposure) {
+        throw errors::NotImplementedError("Gradients of the fluence have not yet"
+                                          "been implemented.");
     }
 
 } // namespace maps

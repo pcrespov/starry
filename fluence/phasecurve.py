@@ -7,11 +7,8 @@ import starry
 time = np.linspace(0, 2, 1000)
 
 # Flux
-map = starry.Map(lmax=4)
-map[0, 0] = 1
-map[1, 0] = 0
-map[2, 1] = 1
-map[4, 1] = 1
+map = starry.Map(lmax=20)
+map.load_image("earth")
 map.axis = [0, 1, 0]
 t0 = 0
 theta0 = 0
@@ -20,7 +17,7 @@ theta = theta0 + 360. / per * (time - t0)
 f = map.flux(theta=theta)
 
 # Fluence
-exp = 0.1
+exp = 0.01
 fl = fluence.phase_curve_fluence(time, np.array(map.y), np.array(map.axis), per, t0, theta0, exp)
 
 # Plot

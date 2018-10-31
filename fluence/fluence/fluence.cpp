@@ -352,22 +352,7 @@ Vector<double> computePhaseCurveFluence(const Vector<double>& time, Vector<doubl
         
         W.rotatez(theta(i), expo, per, Q, RQ);
         f(i) = P * RQ;
-
-
-        // DEBUG: Numerical using centered riemann
-        /*
-        int n = 50;
-        double expo_theta = 2 * pi<double>() / per * expo;
-        double dt = expo_theta / (n + 1);
-        double t0 = theta(i) - 0.5 * expo_theta + dt;
-        f(i) = 0;
-        for (int j = 0; j < n; ++j) {
-            W.rotatez(cos(t0 + j * dt), sin(t0 + j * dt), Q, RQ);
-            f(i) += P * RQ;
-        }
-        f(i) /= n;
-        */
-
+        
     }
 
     return f;

@@ -83,6 +83,7 @@ namespace docstrings {
 
             .. automethod:: __call__(theta=0, x=0, y=0)
             .. automethod:: flux(theta=0, xo=0, yo=0, ro=0, gradient=False)
+            .. automethod:: fluence(theta=0, exposure=0.1, gradient=False)
             .. automethod:: rotate(theta=0)
             .. automethod:: show(cmap='plasma', res=300)
             .. automethod:: animate(cmap='plasma', res=150, frames=50, interval=75, gif='')
@@ -238,6 +239,30 @@ namespace docstrings {
                 If :py:obj:`gradient` is :py:obj:`True`, \
                 returns the tuple :py:obj:`(F, dF)`, where :py:obj:`F` is \
                 the flux and :py:obj:`dF` is \
+                a dictionary containing the derivatives with respect to \
+                each of the input parameters \
+                and each of the map coefficients.
+        )pbdoc";
+
+        const char* fluence = R"pbdoc(
+            Return the total flux received by the observer from the map,
+            integrated over an exposure time :py:obj:`exposure`, defined
+            in units of the object's rotation period. Currently this
+            method only computes the fluence for phase curves, not
+            occultations.
+
+            Args:
+                theta (float or ndarray): Angle of rotation. Default 0.
+                exposure (float): The exposure integration time, in units
+                    of the rotation period. Default 0.1.
+                gradient (bool): Compute and return the gradient of the \
+                    flux as well? Default :py:obj:`False`.
+
+            Returns:
+                The fluence received by the observer (a scalar or a vector). \
+                If :py:obj:`gradient` is :py:obj:`True`, \
+                returns the tuple :py:obj:`(F, dF)`, where :py:obj:`F` is \
+                the fluence and :py:obj:`dF` is \
                 a dictionary containing the derivatives with respect to \
                 each of the input parameters \
                 and each of the map coefficients.

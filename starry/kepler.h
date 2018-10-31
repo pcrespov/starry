@@ -849,8 +849,8 @@ namespace kepler {
                 skyY(N, nwav),
                 axis1(xhat<S>()),
                 axis2(zhat<S>()),
-                W1(lmax, nwav, y, axis1),
-                W2(lmax, nwav, y, axis2),
+                W1(lmax, nwav, y, axis1, B),
+                W2(lmax, nwav, y, axis2, B),
                 AD()
 
             {

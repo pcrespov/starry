@@ -618,6 +618,16 @@ namespace pybind_interface {
                                    "ro"_a=0.0, "gradient"_a=false,
                                    "numerical"_a=false)
 
+            .def("fluence", [](maps::Map<T> &map,
+                            py::array_t<double>& theta,
+                            double exposure,
+                            bool gradient,
+                            bool numerical)
+                            -> py::object {
+                    return vectorize::fluence(map, theta, exposure, gradient, numerical);
+                }, docstrings::Map::fluence, "theta"_a=0.0, "exposure"_a=0.1, "gradient"_a=false,
+                                             "numerical"_a=false)
+
             .def("rotate", [](maps::Map<T> &map, double theta) {
                     map.rotate(static_cast<Scalar<T>>(theta));
             }, docstrings::Map::rotate, "theta"_a=0)
